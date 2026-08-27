@@ -120,6 +120,20 @@ To stop publishing forecasts (dry-run mode):
 - `main.py`: set `publish_reports_to_metaculus=False` in the `SummerTemplateBot2026(...)` constructor near the bottom.
 - `main_with_no_framework.py`: set `SUBMIT_PREDICTION = False` at the top.
 
+## Reviewing how your bot did
+
+Once your questions start resolving, the community-member-maintained optional
+[bot-review](https://github.com/LouisP96/metaculus-bot-review) integration scores them and
+helps to diagnose any reasoning errors.
+
+```bash
+poetry install --with integrations
+poetry run bot-review review --resolved-since 30
+```
+
+A weekly workflow and a Claude Code skill come with it. See the
+[integrations README](integrations/README.md#bot-review).
+
 ## Example usage of /news and /deepnews:
 If you are using AskNews, here is some useful example code.
 ```python
