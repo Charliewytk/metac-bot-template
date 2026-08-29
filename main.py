@@ -678,17 +678,34 @@ if __name__ == "__main__":
         folder_to_save_reports_to=None,
         skip_previously_forecasted_questions=True,
         extra_metadata_in_explanation=True,
-        # llms={
-        #     "default": GeneralLlm(
-        #         model="openrouter/openai/gpt-4o",
-        #         temperature=0.3,
-        #         timeout=40,
-        #         allowed_tries=2,
-        #     ),
-        #     "summarizer": "openai/gpt-4o-mini",
-        #     "researcher": "asknews/news-summaries",
-        #     "parser": "openai/gpt-4o-mini",
-        # },
+        # PINNED, and pinned to FREE OpenRouter models on purpose.
+        #
+        # Leaving this block commented out let forecasting-tools pick its own
+        # defaults, and its default researcher is openai/gpt-4o-search-preview
+        # -- a model OpenRouter does not carry at all. Every scheduled run died
+        # with "No endpoints found for openai/gpt-4o-search-preview" (404), 9
+        # errors per run, before a single token was billed. The key itself was
+        # always fine; the model name never existed on this provider.
+        #
+        # The account is free-tier (402s at ~800 tokens), so every role below
+        # resolves to a ":free" model. Pin them explicitly: a default that
+        # silently rotates is what produced the outage above.
+        llms={
+            "default": GeneralLlm(
+                model="openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+                temperature=0.3,
+                timeout=90,
+                allowed_tries=2,
+            ),
+            "summarizer": "openrouter/google/gemma-4-31b-it:free",
+            # No news/search provider is reachable on the free tier, so the
+            # researcher is a plain LLM reasoning from its own knowledge rather
+            # than a search tool. This is a real quality ceiling, not a bug --
+            # forecasts are made without current news. Swap to a search-capable
+            # researcher the moment the account can pay for one.
+            "researcher": "openrouter/z-ai/glm-5.2:free",
+            "parser": "openrouter/google/gemma-4-31b-it:free",
+        },
     )
 
     # Per-mode tournament URL shown in the summary banner footer. These
