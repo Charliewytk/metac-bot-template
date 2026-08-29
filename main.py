@@ -672,7 +672,10 @@ if __name__ == "__main__":
     # uncomment and edit to pin specific models.
     template_bot = SummerTemplateBot2026(
         research_reports_per_question=1,
-        predictions_per_research_report=5,
+        # 1, not 5. Each prediction is a separate LLM call, so 5 x 9 questions
+        # was ~45 calls per run and the free tier rate-limited us out. Raise
+        # this only once the account can pay for the extra calls.
+        predictions_per_research_report=1,
         use_research_summary_to_forecast=False,
         publish_reports_to_metaculus=publish_to_metaculus,
         folder_to_save_reports_to=None,
