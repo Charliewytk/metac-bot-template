@@ -91,7 +91,7 @@ class SummerTemplateBot2026(ForecastBot):
                 model="openrouter/openai/gpt-4o", # "anthropic/claude-sonnet-4-20250514", etc (see docs for litellm)
                 temperature=0.3,
                 timeout=40,
-                allowed_tries=2,
+                allowed_tries=4,
             ),
             "summarizer": "openai/gpt-4o-mini",
             "researcher": "asknews/news-summaries",
@@ -698,15 +698,21 @@ if __name__ == "__main__":
                 model="openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
                 temperature=0.3,
                 timeout=90,
-                allowed_tries=2,
+                allowed_tries=4,
             ),
             "summarizer": "openrouter/google/gemma-4-31b-it:free",
-            # No news/search provider is reachable on the free tier, so the
-            # researcher is a plain LLM reasoning from its own knowledge rather
-            # than a search tool. This is a real quality ceiling, not a bug --
-            # forecasts are made without current news. Swap to a search-capable
-            # researcher the moment the account can pay for one.
-            "researcher": "openrouter/z-ai/glm-5.2:free",
+            # "no_research", deliberately. No news/search provider is reachable
+            # on the free tier, so a "researcher" LLM adds no information the
+            # default model does not already have -- it just spends a second
+            # free-tier call per question. Pointing it at z-ai/glm-5.2:free made
+            # all 9 questions fail on one upstream 429
+            # (limit_source=upstream_provider_shared_pool, is_byok=false):
+            # a shared free pool we do not control, not our own quota.
+            #
+            # THIS IS THE QUALITY CEILING ON THIS BOT: it forecasts with no
+            # current news. Restore a real searcher the moment the account can
+            # pay for one -- that, not the model choice, is what caps the score.
+            "researcher": "no_research",
             "parser": "openrouter/google/gemma-4-31b-it:free",
         },
     )
