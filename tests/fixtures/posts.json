@@ -1,0 +1,123 @@
+{
+  "results": [
+    {
+      "id": 101,
+      "title": "Will COHBOT1 stay prize-eligible?",
+      "question": {
+        "id": 1001,
+        "title": "Will COHBOT1 stay prize-eligible?",
+        "type": "binary",
+        "status": "open",
+        "my_forecasts": null
+      }
+    },
+    {
+      "id": 102,
+      "title": "Already forecasted single",
+      "question": {
+        "id": 1002,
+        "title": "Already forecasted single",
+        "type": "binary",
+        "status": "open",
+        "my_forecasts": {
+          "latest": {"forecast_values": [0.3, 0.7]},
+          "history": [{"forecast_values": [0.3, 0.7]}]
+        }
+      }
+    },
+    {
+      "id": 200,
+      "title": "Group: Q3 GDP components",
+      "group_of_questions": {
+        "questions": [
+          {
+            "id": 2001,
+            "title": "Consumption",
+            "label": "Consumption",
+            "type": "numeric",
+            "status": "open",
+            "my_forecasts": {
+              "latest": {"forecast_values": [0.1, 0.2]},
+              "history": [{"forecast_values": [0.1, 0.2]}]
+            }
+          },
+          {
+            "id": 2002,
+            "title": "Investment",
+            "label": "Investment",
+            "type": "numeric",
+            "status": "open",
+            "my_forecasts": null
+          },
+          {
+            "id": 2003,
+            "title": "Net exports (closed)",
+            "label": "Net exports",
+            "type": "numeric",
+            "status": "closed",
+            "my_forecasts": null
+          }
+        ]
+      }
+    },
+    {
+      "id": 201,
+      "title": "Group: all members already forecasted",
+      "group_of_questions": {
+        "questions": [
+          {
+            "id": 2101,
+            "title": "A",
+            "type": "binary",
+            "status": "open",
+            "my_forecasts": {
+              "latest": {"forecast_values": [0.5, 0.5]},
+              "history": [{"forecast_values": [0.5, 0.5]}]
+            }
+          },
+          {
+            "id": 2102,
+            "title": "B",
+            "type": "binary",
+            "status": "open",
+            "my_forecasts": {
+              "history": [{"forecast_values": [0.2, 0.8]}]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": 300,
+      "title": "Conditional: if X then Y",
+      "conditional": {
+        "id": 3000,
+        "title": "Conditional: if X then Y",
+        "type": "conditional",
+        "status": "open",
+        "question_yes": {
+          "id": 3001,
+          "title": "Y | X=yes",
+          "type": "binary",
+          "status": "open",
+          "my_forecasts": null
+        },
+        "question_no": {
+          "id": 3002,
+          "title": "Y | X=no",
+          "type": "binary",
+          "status": "open",
+          "my_forecasts": {
+            "latest": {"forecast_values": [0.6, 0.4]},
+            "history": [{"forecast_values": [0.6, 0.4]}]
+          }
+        }
+      }
+    },
+    {
+      "id": 400,
+      "title": "Notebook, not a question",
+      "notebook": {"markdown": "ignore me"}
+    }
+  ]
+}
