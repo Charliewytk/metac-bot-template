@@ -3,6 +3,8 @@ This repository contains a simple bot meant to get you started with creating you
 
 **Brand new to this?** You can get a working bot running in about 5 minutes without writing a single line of code — just fork this repo, paste two API keys into GitHub, and click "Run workflow". See **[Quick start](#quick-start--fork-and-use-github-actions)** below.
 
+**Charles / COHBOT1 (prize-eligible desk):** local `python main.py` is a dry-run and will not post. You submit yourself — see **[How Charles submits](#how-charles-submits-cohbot1)**.
+
 In this project are 2 files:
 - **main.py**: Our recommended template option that uses the [forecasting-tools](https://github.com/Metaculus/forecasting-tools) package to handle a lot of stuff in the background for you (such as API calls). We will update the package, thus allowing you to gain new features with minimal changes to your code.
 - **main_with_no_framework.py**: A copy of main.py but implemented with minimal dependencies. Useful if you want a more custom approach.
@@ -29,7 +31,7 @@ The easiest way to use this repo is to fork it, paste in two API keys, and click
 4) **Run the test workflow to confirm everything works** — go to `Actions → Test Bot → Run workflow → Run workflow` (green button). This forecasts on whatever's currently open in the [bot-testing-area tournament](https://www.metaculus.com/tournament/bot-testing-area/) so you can verify your setup posts forecasts to Metaculus end-to-end. Once the run finishes (~3–5 min), check your bot's profile on Metaculus to confirm the forecasts landed.
 5) **You're done!** The `Forecast on new AI tournament questions` workflow is already enabled and will run every 20 minutes, picking up any new tournament questions and skipping ones it has already forecast on.
 
-To pause your bot, go to `Actions → Forecast on new AI tournament questions → ... (top right) → Disable workflow`.
+To pause your bot, go to `Actions → Forecast on new AI tournament questions → ... (top right) → Disable workflow`. Local `python main.py` without `--submit` will not publish even if Actions is enabled.
 
 ### Testing your changes against the GitHub Actions workflow
 You can run any workflow against any branch — no need to merge to `main` first, and no need to fork if you have push access to this repo.
@@ -44,12 +46,13 @@ The runner checks out your branch and uses the repo's existing secrets — those
 Instructions for getting your METACULUS_TOKEN, OPENROUTER_API_KEY, or optional search provider API keys (AskNews, Exa, Perplexity, etc) are listed on the "Getting Started" section of the [resources](https://www.metaculus.com/notebooks/38928/ai-benchmark-resources/#want-to-join-the-ai-forecasting-benchmark) page.
 
 ## Changing the Github automation
-To run a different script under the same workflows, edit the `poetry run python main.py` line in the appropriate file under `.github/workflows/` and replace `main.py` with your script. The workflows that exist:
-- `test_bot.yaml` — manual-trigger smoke test against the bot-testing-area tournament.
-- `run_bot_on_tournament.yaml` — every 20 min on the live AIB tournament + MiniBench.
-- `run_bot_on_metaculus_cup.yaml` — every 2 days on the Metaculus Cup.
+To run a different script under the same workflows, edit the `poetry run python main.py --submit` line in the appropriate file under `.github/workflows/` and replace `main.py` with your script. Keep `--submit` if that workflow is meant to publish. The workflows that exist:
+- `test_bot.yaml` — manual-trigger smoke test against the bot-testing-area tournament (`--submit`).
+- `run_bot_on_tournament.yaml` — every 6h on the live AIB tournament + MiniBench (`--submit`).
+- `run_bot_on_metaculus_cup.yaml` — every 2 days on the Metaculus Cup (`--submit`).
+- `unit_tests.yaml` — offline dry-run + unit tests. No secrets, never submits.
 
-**To run `main_with_no_framework.py` via GitHub Actions instead of `main.py`:** open the workflow file you want and change `poetry run python main.py` to `poetry run python main_with_no_framework.py`. That's the only change required.
+**To run `main_with_no_framework.py` via GitHub Actions instead of `main.py`:** open the workflow file you want and change `poetry run python main.py --submit` to `poetry run python main_with_no_framework.py --submit`. Keep `--submit`.
 
 ## Editing in GitHub UI
 Remember that you can edit a bot non locally by clicking on a file in Github, and then clicking the 'Edit this file' button. Whether you develop locally or not, when making edits, attempt to do things that you think others have not tried, as this will help further innovation in the field more than doing something that has already been done. Feel free to ask about what has or has not been tried in the Discord, see [other bot's self-descriptions](https://www.metaculus.com/notebooks/38928/ai-benchmark-resources/#what-are-other-bots-doing), or read bot's [open source code](https://www.metaculus.com/notebooks/38928/ai-benchmark-resources/#open-source-bots).
@@ -93,32 +96,50 @@ cp .env.template .env
 ```
 Then open `.env` in any text editor and replace each `REPLACE_ME` with your real key. At minimum you need `METACULUS_TOKEN` and one LLM key (`OPENROUTER_API_KEY` is recommended). See the comments inside `.env.template` for where to get each one.
 
-### 5. Run the bot
-**First run — smoke-test against the [bot-testing-area tournament](https://www.metaculus.com/tournament/bot-testing-area/):**
+### 5. Run the bot (local default: dry-run, never submits)
+
+Local `main.py` does **not** publish. You will see `publish=no (dry run)`. Forecasts are produced in-process only.
+
+**Offline guard check (no API keys, no Metaculus, no LLMs):**
+```bash
+python dry_run.py
+python -m unittest discover -s tests -v
+```
+
+**Live dry-run against the [bot-testing-area tournament](https://www.metaculus.com/tournament/bot-testing-area/)** (reads questions; still does not post):
 ```bash
 poetry run python main.py --mode test_questions
 ```
-You'll see a one-line startup banner, forecasting progress logs, then a `🎉 Bot submitted N forecast(s)` banner with direct links to each forecast on Metaculus.
 
-**Forecast on live AIB tournament + MiniBench:**
+**Live dry-run on AIB + MiniBench / Cup:**
 ```bash
 poetry run python main.py --mode tournament
-```
-
-**Forecast on the Metaculus Cup:**
-```bash
 poetry run python main.py --mode metaculus_cup
 ```
 
-**Run the no-framework reference implementation instead:**
+To actually publish, Charles passes `--submit` (see below). `METACULUS_DRY_RUN=1` overrides `--submit` and keeps the process read-only.
+
+**No-framework reference implementation** (same default: no submit):
 ```bash
 poetry run python main_with_no_framework.py
 ```
-This file has no `--mode` flag; it's controlled by the constants at the top of the file (`SUBMIT_PREDICTION`, `USE_EXAMPLE_QUESTIONS`, `TOURNAMENT_ID`, etc.). Flip `USE_EXAMPLE_QUESTIONS = True` to point it at the bot-testing-area tournament instead of the live AIB.
+`--mode` is not used here; point it with `USE_EXAMPLE_QUESTIONS` / `TOURNAMENT_ID` at the top of the file. `--submit` and `--force-reforecast` work the same way.
 
-To stop publishing forecasts (dry-run mode):
-- `main.py`: set `publish_reports_to_metaculus=False` in the `SummerTemplateBot2026(...)` constructor near the bottom.
-- `main_with_no_framework.py`: set `SUBMIT_PREDICTION = False` at the top.
+## How Charles submits (COHBOT1)
+
+This desk is prize-eligible. The agent that edits this repo must not submit. Charles does.
+
+1. **GitHub Actions (usual path).** The scheduled/manual forecast workflows pass `--submit` for you. `Actions → Forecast on new AI tournament questions → Run workflow`. Same for Test Bot and Metaculus Cup. Repo secrets stay in GitHub; do not paste tokens into chat.
+2. **Local, only when you mean it:**
+   ```bash
+   poetry run python main.py --mode tournament --submit
+   ```
+   Add `--force-reforecast` only if you want to overwrite a standing forecast (Cup updates, a bad first take). Default is skip-already-forecasted for both single questions and each member of a group question.
+3. **Hard stops that still apply:** `--dry-run` (mutually exclusive with `--submit`), and `METACULUS_DRY_RUN=1` in the environment. Either one blocks every Metaculus forecast/comment POST, even if `publish_reports_to_metaculus` is flipped in code.
+
+A second run on the same questions is a no-op: already-forecasted singles are skipped, and a group only retries members that still have no forecast.
+
+Do not enable launchd (or any other local scheduler) to call `--submit`. Actions is the scheduler.
 
 ## Reviewing how your bot did
 

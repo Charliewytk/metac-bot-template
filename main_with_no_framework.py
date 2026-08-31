@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import asyncio
 from collections import Counter
 import datetime
@@ -9,6 +10,16 @@ import re
 import sys
 
 import dotenv
+
+from forecast_guard import (
+    assert_submit_allowed,
+    decide_forecasts,
+    get_question_dict_from_post,
+    install_dry_run_network_guard,
+    question_already_forecasted,
+    resolve_publish_intent,
+    set_publish_allowed,
+)
 
 dotenv.load_dotenv()
 
@@ -49,7 +60,7 @@ Updates pending for Spring season:
 
 ######################### CONSTANTS #########################
 # Constants
-SUBMIT_PREDICTION = True  # set to True to publish your predictions to Metaculus
+SUBMIT_PREDICTION = False  # Charles publishes with --submit; default never posts
 USE_EXAMPLE_QUESTIONS = False  # set to True to forecast on the bot-testing-area tournament
 NUM_RUNS_PER_QUESTION = (
     5  # The median forecast is taken between NUM_RUNS_PER_QUESTION runs
@@ -101,9 +112,11 @@ def post_question_comment(post_id: int, comment_text: str) -> None:
     """
     Post a comment on the question page as the bot user.
     """
+    url = f"{API_BASE_URL}/comments/create/"
+    assert_submit_allowed(url)
 
     response = requests.post(
-        f"{API_BASE_URL}/comments/create/",
+        url,
         json={
             "text": comment_text,
             "parent": None,
@@ -122,6 +135,7 @@ def post_question_prediction(question_id: int, forecast_payload: dict) -> None:
     Post a forecast on a question.
     """
     url = f"{API_BASE_URL}/questions/forecast/"
+    assert_submit_allowed(url)
     response = requests.post(
         url,
         json=[
@@ -206,21 +220,17 @@ def get_open_question_ids_from_tournament(
 ) -> list[tuple[int, int]]:
     posts = list_posts_from_tournament(tournament_id)
 
-    post_dict = dict()
-    for post in posts["results"]:
-        if question := post.get("question"):
-            # single question post
-            post_dict[post["id"]] = [question]
-
+    # Single posts and group posts share one planner: each open question
+    # (including each group member) is its own (question_id, post_id) pair.
+    decision = decide_forecasts(posts["results"], skip_already=False)
     open_question_id_post_id = []  # [(question_id, post_id)]
-    for post_id, questions in post_dict.items():
-        for question in questions:
-            if question.get("status") == "open":
-                print(
-                    f"ID: {question['id']}\nQ: {question['title']}\nCloses: "
-                    f"{question['scheduled_close_time']}"
-                )
-                open_question_id_post_id.append((question["id"], post_id))
+    for target in decision.targets:
+        question = target.question
+        print(
+            f"ID: {target.question_id}\nQ: {target.title}\nCloses: "
+            f"{question.get('scheduled_close_time')}\nKind: {target.kind}"
+        )
+        open_question_id_post_id.append((target.question_id, target.post_id))
 
     return open_question_id_post_id
 
@@ -1393,22 +1403,21 @@ async def get_multiple_choice_gpt_prediction(
 
 
 ################### FORECASTING ###################
-def forecast_is_already_made(post_details: dict) -> bool:
+def forecast_is_already_made(post_details: dict, question_id: int | None = None) -> bool:
     """
-    Check if a forecast has already been made by looking at my_forecasts in the question data.
+    Check if a forecast has already been made by looking at my_forecasts.
 
-    question.my_forecasts.latest.forecast_values has the following values for each question type:
-    Binary: [probability for no, probability for yes]
-    Numeric: [cdf value 1, cdf value 2, ..., cdf value 201]
-    Multiple Choice: [probability for option 1, probability for option 2, ...]
+    Works for single-question posts and for one member of a group post.
+    When question_id is given, only that question is checked (so a
+    half-forecasted group is not treated as fully done).
     """
-    try:
-        forecast_values = post_details["question"]["my_forecasts"]["latest"][
-            "forecast_values"
-        ]
-        return forecast_values is not None
-    except Exception:
-        return False
+    if question_id is not None:
+        question = get_question_dict_from_post(post_details, question_id)
+        return question_already_forecasted(question)
+    raw = post_details.get("question")
+    if isinstance(raw, dict):
+        return question_already_forecasted(raw)
+    return False
 
 
 async def forecast_individual_question(
@@ -1419,8 +1428,15 @@ async def forecast_individual_question(
     skip_previously_forecasted_questions: bool,
 ) -> str:
     post_details = get_post_details(post_id)
-    question_details = post_details["question"]
-    title = question_details["title"]
+    question_details = get_question_dict_from_post(post_details, question_id)
+    if question_details is None:
+        question_details = post_details.get("question")
+    if not question_details:
+        raise ValueError(
+            f"Post {post_id} has no question {question_id} "
+            "(single, group member, or conditional leg)."
+        )
+    title = question_details.get("title") or post_details.get("title") or ""
     question_type = question_details["type"]
 
     summary_of_forecast = ""
@@ -1434,8 +1450,8 @@ async def forecast_individual_question(
         summary_of_forecast += f"options: {options}\n"
 
     if (
-        forecast_is_already_made(post_details)
-        and skip_previously_forecasted_questions == True
+        skip_previously_forecasted_questions
+        and forecast_is_already_made(post_details, question_id)
     ):
         summary_of_forecast += f"Skipped: Forecast already made\n"
         return summary_of_forecast
@@ -1621,6 +1637,42 @@ def _print_no_framework_summary_banner(
 
 ######################## FINAL RUN #########################
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description=(
+            "No-framework forecasting bot. Default is a dry-run that never "
+            "submits. Charles publishes with --submit."
+        )
+    )
+    publish = parser.add_mutually_exclusive_group()
+    publish.add_argument(
+        "--submit",
+        action="store_true",
+        help="Publish forecasts to Metaculus (off by default).",
+    )
+    publish.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Never submit (default even without this flag).",
+    )
+    parser.add_argument(
+        "--force-reforecast",
+        action="store_true",
+        help="Forecast questions that already have a standing forecast.",
+    )
+    args = parser.parse_args()
+
+    will_publish = resolve_publish_intent(
+        submit=args.submit or SUBMIT_PREDICTION,
+        dry_run=args.dry_run,
+    )
+    set_publish_allowed(will_publish)
+    if not will_publish:
+        install_dry_run_network_guard()
+
+    skip_already = (
+        SKIP_PREVIOUSLY_FORECASTED_QUESTIONS and not args.force_reforecast
+    )
+
     check_environment(strict=True)
 
     active_tournament_id = BOT_TESTING_AREA_ID if USE_EXAMPLE_QUESTIONS else TOURNAMENT_ID
@@ -1632,7 +1684,7 @@ if __name__ == "__main__":
         else None
     )
 
-    publish = "publish=yes" if SUBMIT_PREDICTION else "publish=no (dry run)"
+    publish = "publish=yes" if will_publish else "publish=no (dry run)"
     print(f"🤖  no-framework bot, tournament={active_tournament_id}, {publish}\n")
 
     open_question_id_post_id = get_open_question_ids_from_tournament(active_tournament_id)
@@ -1640,9 +1692,9 @@ if __name__ == "__main__":
     asyncio.run(
         forecast_questions(
             open_question_id_post_id,
-            SUBMIT_PREDICTION,
+            will_publish,
             NUM_RUNS_PER_QUESTION,
-            SKIP_PREVIOUSLY_FORECASTED_QUESTIONS,
+            skip_already,
             tournament_url=active_tournament_url,
         )
     )

@@ -1,17 +1,23 @@
-import argparse
 import asyncio
 import logging
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Literal, Sequence
 
 import dotenv
 
 # Runtime helpers (env validation, banners, dependency-warning suppression).
 from bot_helpers import (
     check_environment,
+    parse_bot_cli,
     print_run_summary_banner,
     print_startup_banner,
     silence_noisy_dependencies,
+)
+from forecast_guard import (
+    filter_sdk_questions,
+    install_dry_run_network_guard,
+    resolve_publish_intent,
+    set_publish_allowed,
 )
 
 silence_noisy_dependencies()
@@ -645,6 +651,32 @@ class SummerTemplateBot2026(ForecastBot):
             """
         )
 
+    async def forecast_questions(  # type: ignore[override]
+        self,
+        questions: Sequence,
+        return_exceptions: bool = False,
+    ):
+        """
+        Duplicate-forecast guard on top of forecasting-tools.
+
+        Group posts are expanded into one MetaculusQuestion per member by the
+        SDK. We skip each member independently so a half-forecasted group
+        only retries the missing legs, and a second run is a no-op.
+        """
+        if self.skip_previously_forecasted_questions:
+            kept, skipped = filter_sdk_questions(questions, skip_already=True)
+            if skipped:
+                logger.info(
+                    "forecast_guard: skipping %s already-forecasted question(s) "
+                    "(%s remaining)",
+                    len(skipped),
+                    len(kept),
+                )
+            questions = kept
+        return await super().forecast_questions(
+            questions, return_exceptions=return_exceptions
+        )
+
 
 if __name__ == "__main__":
     logging.basicConfig(
@@ -652,19 +684,19 @@ if __name__ == "__main__":
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
-    parser = argparse.ArgumentParser(description="Run the template forecasting bot")
-    parser.add_argument(
-        "--mode",
-        type=str,
-        choices=["tournament", "metaculus_cup", "test_questions"],
-        default="tournament",
-        help="What to forecast on (default: tournament)",
-    )
-    args = parser.parse_args()
+    args = parse_bot_cli()
     run_mode: Literal["tournament", "metaculus_cup", "test_questions"] = args.mode
 
+    publish_to_metaculus = resolve_publish_intent(
+        submit=args.submit, dry_run=args.dry_run
+    )
+    set_publish_allowed(publish_to_metaculus)
+    if not publish_to_metaculus:
+        # Belt and braces: even if publish_reports_to_metaculus were flipped
+        # later, forecast/comment POSTs to Metaculus raise SubmitBlocked.
+        install_dry_run_network_guard()
+
     check_environment(strict=True)
-    publish_to_metaculus = True
     print_startup_banner(run_mode, will_publish=publish_to_metaculus)
 
     # Configure the bot. The `llms=` block below is commented out to use
@@ -679,7 +711,7 @@ if __name__ == "__main__":
         use_research_summary_to_forecast=False,
         publish_reports_to_metaculus=publish_to_metaculus,
         folder_to_save_reports_to=None,
-        skip_previously_forecasted_questions=True,
+        skip_previously_forecasted_questions=not args.force_reforecast,
         extra_metadata_in_explanation=True,
         # PINNED, and pinned to FREE OpenRouter models on purpose.
         #
@@ -746,7 +778,8 @@ if __name__ == "__main__":
         # The Metaculus Cup may be uninitialized near the start of a season
         # (Jan/May/Sep). AXC_2025_TOURNAMENT_ID = 32564 and
         # AI_2027_TOURNAMENT_ID = "ai-2027" are also valid targets here.
-        template_bot.skip_previously_forecasted_questions = False
+        # Duplicate-forecast guard stays on unless Charles passed
+        # --force-reforecast. Re-forecasting every cup run was a hole.
         forecast_reports = asyncio.run(
             template_bot.forecast_on_tournament(
                 client.CURRENT_METACULUS_CUP_ID, return_exceptions=True
@@ -756,7 +789,7 @@ if __name__ == "__main__":
         # The bot-testing-area tournament contains all question types and is
         # the recommended target for smoke-testing your bot.
         # https://www.metaculus.com/tournament/bot-testing-area/
-        template_bot.skip_previously_forecasted_questions = False
+        # Still skip already-forecasted questions unless --force-reforecast.
         forecast_reports = asyncio.run(
             template_bot.forecast_on_tournament(
                 "bot-testing-area", return_exceptions=True

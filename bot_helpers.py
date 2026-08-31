@@ -8,6 +8,7 @@ it's meant to be a single-file reference implementation.
 """
 from __future__ import annotations
 
+import argparse
 import logging
 import os
 import sys
@@ -53,6 +54,46 @@ def silence_noisy_dependencies() -> None:
     litellm_logger = logging.getLogger("LiteLLM")
     litellm_logger.setLevel(logging.WARNING)
     litellm_logger.propagate = False
+
+
+def parse_bot_cli(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    """
+    Shared CLI for main.py. Default is dry-run: --submit is the only way
+    this process will publish. --dry-run and --submit cannot be combined.
+    """
+    parser = argparse.ArgumentParser(
+        description=(
+            "Run the template forecasting bot. Default is a local dry-run "
+            "that never submits. Charles publishes with --submit."
+        )
+    )
+    parser.add_argument(
+        "--mode",
+        type=str,
+        choices=["tournament", "metaculus_cup", "test_questions"],
+        default="tournament",
+        help="What to forecast on (default: tournament)",
+    )
+    publish = parser.add_mutually_exclusive_group()
+    publish.add_argument(
+        "--submit",
+        action="store_true",
+        help=(
+            "Publish forecasts to Metaculus. Off by default. This is how "
+            "Charles submits — do not pass it from an unattended agent."
+        ),
+    )
+    publish.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Never submit (default even without this flag).",
+    )
+    parser.add_argument(
+        "--force-reforecast",
+        action="store_true",
+        help="Forecast questions that already have a standing forecast.",
+    )
+    return parser.parse_args(list(argv) if argv is not None else None)
 
 
 def check_environment(strict: bool = True) -> None:
